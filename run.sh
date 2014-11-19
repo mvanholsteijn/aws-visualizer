@@ -1,4 +1,7 @@
 mkdir -p target
-python graph_region.py > target/region.dot
-dot -Tpng -o target/region.png target/region.dot
-open target/region.png
+rm -rf target/*.dot target/*.png
+python graph_region.py  --directory target $@
+for file in target/*.dot; do
+	dot -Tpng -o target/$(basename $file .dot).png  $file
+done
+open target/*.png
