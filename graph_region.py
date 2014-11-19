@@ -23,6 +23,7 @@ class Arc:
 
 class AWSVisualizer:
 	def __init__(self):
+		self.show_external_only = False
 		self.use_subgraphs = True
 		self.directory = '.'
 		self.vpcs = None
@@ -35,19 +36,30 @@ class AWSVisualizer:
 		self.subnets = {}
 		self.assigned_security_groups = {}
 		self.loadbalancers = None
+		self.ips = {}
 
 	def connect(self):
 		self.EC2 = boto.ec2.connect_to_region(self.region)
 		self.VPC = boto.vpc.connect_to_region(self.region)
 		self.ELB = boto.ec2.elb.connect_to_region(self.region)
+		self.load()
 
 	def load(self):
+		self.vpcs = self.VPC.get_all_vpcs()
+		self.loadbalancers = self.ELB.get_all_load_balancers()
 		self.security_groups = self.EC2.get_all_security_groups()
 		self.instances = self.EC2.get_only_instances(max_results=200)
-		self.vpcs = self.VPC.get_all_vpcs()
+		self.load_all_ips()
 		self.load_subnets()
 		self.load_assigned_security_groups()
-		self.loadbalancers = self.ELB.get_all_load_balancers()
+
+	def load_all_ips(self):
+		for vpc in self.vpcs:
+			self.ips[vpc.id] = set()
+		for vpc in self.vpcs:
+			for instance in self.get_instances_in_vpc(vpc.id):
+				self.ips[vpc.id].update([instance.ip_address, instance.private_ip_address])
+			self.ips[vpc.id] = map(lambda ip : IPAddress(ip), filter(lambda ip : ip != None, self.ips[vpc.id]))
 
 	def load_subnets(self):
 		self.subnets = {}
@@ -70,11 +82,44 @@ class AWSVisualizer:
 				result = True
 			if grant.cidr_ip != None:
 				network = IPNetwork(grant.cidr_ip)
-			 	if IPAddress(instance.private_ip_address) in network:
+			 	if instance.private_ip_address != None and IPAddress(instance.private_ip_address) in network:
 					result = True
 				if instance.ip_address != None and IPAddress(instance.ip_address) in network:
 					result = True
 		return result
+
+	def network_matches_any_address_in_vpc(self, vpc, network):
+		matching_ips = filter(lambda ip : ip in network, self.ips[vpc])
+		return len(matching_ips) != 0
+
+	def network_refers_address_outside_vpc(self, vpc, network):
+		return not self.network_matches_any_address_in_vpc(vpc, network)
+
+	def get_networks_of_rule_refering_to_external_address(self, vpc, rule):
+		cidrs = set(map(lambda grant : grant.cidr_ip, filter(lambda g : g.cidr_ip != None, rule.grants)))
+		networks = set(map(lambda cidr : IPNetwork(cidr), cidrs))
+		return filter(lambda network : self.network_refers_address_outside_vpc(vpc, network), networks)
+
+	def get_networks_refering_to_external_address(self, vpc, security_group):
+		result = []
+		for rule in security_group.rules:
+			result += self.get_networks_of_rule_refering_to_external_address(vpc, rule)
+		return result
+
+	def rule_refers_to_external_address(self, vpc, rule):
+		return len(self.get_networks_of_rule_refering_to_external_address(vpc, rule)) != 0
+		
+	def find_all_groups_refering_outside_ip_address_in_vpc(self, vpc):
+		result = {}
+		for security_group in self.security_groups:
+			networks = self.get_networks_refering_to_external_address(vpc, security_group)
+			if len(networks) != 0:
+				result[security_group] = networks
+		return result
+		
+	def find_all_groups_refering_outside_ip_address(self):
+		for vpc in self.vpcs:
+			self.find_all_groups_refering_outside_ip_address_in_vpc(vpc.id)
 		
 	
 	def is_grantee_of_security_group(self, security_group, instance):
@@ -123,7 +168,6 @@ class AWSVisualizer:
 		
 
 	def print_dot(self):
-		
 		for vpc in self.vpcs:
 			self.output = open("%s/%s.dot" % (self.directory, vpc.id), 'w')
 			self.output.write('digraph vpc {\n')
@@ -137,15 +181,32 @@ class AWSVisualizer:
 					if self.use_subgraphs:
 						name = subnet.tags['Name'] if 'Name' in subnet.tags else subnet.id
 						self.output.write('subgraph "cluster-%s\n" {' % (subnet.id))
-					self.output.write('label = "%s";\n' % name)
+						self.output.write('label = "%s";\n' % name)
 					for instance in  subnet_instances:
 						name = instance.tags['Name'] if 'Name' in instance.tags else instance.id
 						self.output.write('"%s" [label="%s"];\n' % (instance.id, name))
 					if self.use_subgraphs:
 						self.output.write('}\n')
-			self.print_security_group_relations(vpc.id)
+			if(not self.show_external_only):
+				self.print_security_group_relations(vpc.id)
+			self.print_external_networks(vpc.id)
 			self.output.write('}\n')
 			self.output.close()
+
+	def print_external_networks(self, vpc):
+		groups = self.find_all_groups_refering_outside_ip_address_in_vpc(vpc)
+		instances_in_vpc = map(lambda instance: instance.id, self.get_instances_in_vpc(vpc))
+		if self.use_subgraphs:
+			self.output.write('subgraph "cluster-external-%s\n" {' % (vpc))
+			self.output.write('label = "external";\n')
+			self.output.write('"external";\n')
+		for group in groups:
+			grantors = self.find_instances_with_assigned_security_group(group).intersection(instances_in_vpc)
+			for grantor in grantors:
+				self.output.write('"%s" -> "%s";\n' % ("external", grantor))
+			
+		if self.use_subgraphs:
+			self.output.write('}\n')
 
 	def print_security_group_relations(self, vpc):
 		network_connections = set()
@@ -166,11 +227,15 @@ parser.add_option("-d", "--directory", dest="directory", default=".",
 parser.add_option("-s", "--use-subgraphs",
                   action="store_true", dest="use_subgraphs", default=False,
                   help="use subnet subgraphs")
+parser.add_option("-e", "--show-external-only",
+                  action="store_true", dest="show_external_only", default=False,
+                  help="only show external network connections")
 
 (options, args) = parser.parse_args()
 visualizer = AWSVisualizer()
 visualizer.use_subgraphs = options.use_subgraphs
 visualizer.directory = options.directory
+visualizer.show_external_only = options.show_external_only
+
 visualizer.connect()
-visualizer.load()
 visualizer.print_dot()
