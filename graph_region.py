@@ -88,17 +88,10 @@ class AWSVisualizer:
 					result = True
 		return result
 
-	def network_matches_any_address_in_vpc(self, vpc, network):
-		matching_ips = filter(lambda ip : ip in network, self.ips[vpc])
-		return len(matching_ips) != 0
-
-	def network_refers_address_outside_vpc(self, vpc, network):
-		return not self.network_matches_any_address_in_vpc(vpc, network)
-
 	def get_networks_of_rule_refering_to_external_address(self, vpc, rule):
 		cidrs = set(map(lambda grant : grant.cidr_ip, filter(lambda g : g.cidr_ip != None, rule.grants)))
 		networks = set(map(lambda cidr : IPNetwork(cidr), cidrs))
-		return filter(lambda network : self.network_refers_address_outside_vpc(vpc, network), networks)
+		return filter(lambda network : not network.is_private(), networks)
 
 	def get_networks_refering_to_external_address(self, vpc, security_group):
 		result = []
@@ -176,15 +169,18 @@ class AWSVisualizer:
 
 			for subnet in self.subnets[vpc.id]:
 				subnet_instances = self.get_instances_in_subnet(subnet.id)
-				lb_instances = self.get_loadbalancers_in_subnet(subnet.id)
-				if len(subnet_instances) or len(lb_instances):
+				loadbalancers = self.get_loadbalancers_in_subnet(subnet.id)
+				if len(subnet_instances) or len(loadbalancers):
 					if self.use_subgraphs:
 						name = subnet.tags['Name'] if 'Name' in subnet.tags else subnet.id
-						self.output.write('subgraph "cluster-%s\n" {' % (subnet.id))
+						self.output.write('subgraph "cluster-%s" {\n' % (subnet.id))
 						self.output.write('label = "%s";\n' % name)
 					for instance in  subnet_instances:
 						name = instance.tags['Name'] if 'Name' in instance.tags else instance.id
 						self.output.write('"%s" [label="%s"];\n' % (instance.id, name))
+					for lb in loadbalancers:
+						for instances in lb.instances:
+							self.output.write('"%s" [label="%s"];\n' % (instance.id, lb.name))
 					if self.use_subgraphs:
 						self.output.write('}\n')
 			if(not self.show_external_only):
@@ -196,14 +192,27 @@ class AWSVisualizer:
 	def print_external_networks(self, vpc):
 		groups = self.find_all_groups_refering_outside_ip_address_in_vpc(vpc)
 		instances_in_vpc = map(lambda instance: instance.id, self.get_instances_in_vpc(vpc))
+		network_connections = set()
+		networks = set()
 		if self.use_subgraphs:
-			self.output.write('subgraph "cluster-external-%s\n" {' % (vpc))
+			self.output.write('subgraph "cluster-external-%s" {\n' % (vpc))
 			self.output.write('label = "external";\n')
-			self.output.write('"external";\n')
+
 		for group in groups:
 			grantors = self.find_instances_with_assigned_security_group(group).intersection(instances_in_vpc)
 			for grantor in grantors:
-				self.output.write('"%s" -> "%s";\n' % ("external", grantor))
+				for network in groups[group]:
+					networks.update([network])
+					if self.show_external_only:
+						network_connections.update([Arc(str(network), grantor)])
+					else:
+						network_connections.update([Arc("external", grantor)])
+		if not self.show_external_only:
+			self.output.write('"external" [label="%s"];\n' % ' '.join(str(n) for n in networks))
+
+		for arc in network_connections:
+			self.output.write('%s\n' % str(arc)) 
+
 			
 		if self.use_subgraphs:
 			self.output.write('}\n')
@@ -230,12 +239,16 @@ parser.add_option("-s", "--use-subgraphs",
 parser.add_option("-e", "--show-external-only",
                   action="store_true", dest="show_external_only", default=False,
                   help="only show external network connections")
+parser.add_option("-r", "--region",
+                  dest="region", default="eu-west-1",
+                  help="select region to graph")
 
 (options, args) = parser.parse_args()
 visualizer = AWSVisualizer()
 visualizer.use_subgraphs = options.use_subgraphs
 visualizer.directory = options.directory
 visualizer.show_external_only = options.show_external_only
+visualizer.region = options.region
 
 visualizer.connect()
 visualizer.print_dot()
