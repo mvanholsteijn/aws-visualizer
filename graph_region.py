@@ -178,9 +178,6 @@ class AWSVisualizer:
 					for instance in  subnet_instances:
 						name = instance.tags['Name'] if 'Name' in instance.tags else instance.id
 						self.output.write('"%s" [label="%s"];\n' % (instance.id, name))
-					for lb in loadbalancers:
-						for lb_instance in lb.instances:
-							self.output.write('"%s" [label="%s"];\n' % (lb_instance.id, lb.name))
 					if self.use_subgraphs:
 						self.output.write('}\n')
 			if(not self.show_external_only):
