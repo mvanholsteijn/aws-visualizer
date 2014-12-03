@@ -1,4 +1,4 @@
-from optparse import OptionParser
+from optparse import OptionParser, Option
 import boto.ec2
 import boto.vpc
 import boto.ec2.elb
@@ -37,6 +37,7 @@ class AWSVisualizer:
 		self.assigned_security_groups = {}
 		self.loadbalancers = None
 		self.ips = {}
+		self.exclude_security_groups = set()
 
 	def connect(self):
 		self.EC2 = boto.ec2.connect_to_region(self.region)
@@ -177,7 +178,8 @@ class AWSVisualizer:
 						self.output.write('label = "%s";\n' % name)
 					for instance in  subnet_instances:
 						name = instance.tags['Name'] if 'Name' in instance.tags else instance.id
-						self.output.write('"%s" [label="%s"];\n' % (instance.id, name))
+						ip = instance.ip_address if instance.ip_address else ""
+						self.output.write('"%s" [label="%s\\n%s"];\n' % (instance.id, name, ip))
 					if self.use_subgraphs:
 						self.output.write('}\n')
 			if(not self.show_external_only):
@@ -188,7 +190,8 @@ class AWSVisualizer:
 
 	def print_external_networks(self, vpc):
 		groups = self.find_all_groups_refering_outside_ip_address_in_vpc(vpc)
-		instances_in_vpc = map(lambda instance: instance.id, self.get_instances_in_vpc(vpc))
+		instances_in_vpc = self.get_instances_in_vpc(vpc)
+		instance_ids_in_vpc = map(lambda instance: instance.id, instances_in_vpc)
 		network_connections = set()
 		networks = set()
 		if self.use_subgraphs:
@@ -196,21 +199,19 @@ class AWSVisualizer:
 			self.output.write('label = "external";\n')
 
 		for group in groups:
-			grantors = self.find_instances_with_assigned_security_group(group).intersection(instances_in_vpc)
+			grantors = self.find_instances_with_assigned_security_group(group).intersection(instance_ids_in_vpc)
 			for grantor in grantors:
 				for network in groups[group]:
 					networks.update([network])
-					if self.show_external_only:
-						network_connections.update([Arc(str(network), grantor)])
-					else:
-						network_connections.update([Arc("external", grantor)])
+					source = str(network) if self.show_external_only else "external"
+					network_connections.update([Arc(source, grantor)])
+
 		if not self.show_external_only:
 			self.output.write('"external" [label="%s"];\n' % ' '.join(str(n) for n in networks))
 
 		for arc in network_connections:
 			self.output.write('%s\n' % str(arc)) 
 
-			
 		if self.use_subgraphs:
 			self.output.write('}\n')
 
@@ -227,7 +228,19 @@ class AWSVisualizer:
 		for arc in network_connections:
 			self.output.write('%s\n' % str(arc)) 
 
-parser = OptionParser()
+class MultipleOption(Option):
+    ACTIONS = Option.ACTIONS + ("extend",)
+    STORE_ACTIONS = Option.STORE_ACTIONS + ("extend",)
+    TYPED_ACTIONS = Option.TYPED_ACTIONS + ("extend",)
+    ALWAYS_TYPED_ACTIONS = Option.ALWAYS_TYPED_ACTIONS + ("extend",)
+
+    def take_action(self, action, dest, opt, value, values, parser):
+        if action == "extend":
+            values.ensure_value(dest, []).append(value)
+        else:
+            Option.take_action(self, action, dest, opt, value, values, parser)
+
+parser = OptionParser(option_class=MultipleOption)
 parser.add_option("-d", "--directory", dest="directory", default=".",
                   help="output directory defaults to .", metavar="DIRECTORY")
 parser.add_option("-s", "--use-subgraphs",
@@ -236,6 +249,9 @@ parser.add_option("-s", "--use-subgraphs",
 parser.add_option("-e", "--show-external-only",
                   action="store_true", dest="show_external_only", default=False,
                   help="only show external network connections")
+parser.add_option("-x", "--exclude-security-group",
+                  action="extend", type="string", dest="exclude_security_group", metavar="SECURITY-GROUP",
+                  help="exclude security group")
 parser.add_option("-r", "--region",
                   dest="region", default="eu-west-1",
                   help="select region to graph")
@@ -245,6 +261,7 @@ visualizer = AWSVisualizer()
 visualizer.use_subgraphs = options.use_subgraphs
 visualizer.directory = options.directory
 visualizer.show_external_only = options.show_external_only
+visualizer.exclude_security_group= options.exclude_security_group
 visualizer.region = options.region
 
 visualizer.connect()
