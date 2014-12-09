@@ -3,6 +3,8 @@ import boto.ec2
 import boto.vpc
 import boto.ec2.elb
 from netaddr import IPNetwork, IPAddress
+import re
+import sys
 
 class Arc:
 	def __init__(self, source, target):
@@ -50,9 +52,22 @@ class AWSVisualizer:
 		self.loadbalancers = self.ELB.get_all_load_balancers()
 		self.security_groups = self.EC2.get_all_security_groups()
 		self.instances = self.EC2.get_only_instances(max_results=200)
+
 		self.load_all_ips()
 		self.load_subnets()
 		self.load_assigned_security_groups()
+
+	def get_security_group_by_id(self, id):
+		for group in self.security_groups:
+			if id == group.id:
+				return group
+		assert False, "No security group with id %s was found." % id
+
+	def get_instance_by_id(self, id):
+		for instance in self.instances:
+			if id == instance.id:
+				return instance
+		assert False, "No instance with id %s was found." % id
 
 	def load_all_ips(self):
 		for vpc in self.vpcs:
@@ -76,18 +91,6 @@ class AWSVisualizer:
 			self.assigned_security_groups[instance.id] = groups
 
 
-	def is_grantee_of_security_rule(self, rule, instance):
-		result = False
-		for grant in rule.grants:
-			if grant.group_id in self.assigned_security_groups[instance.id]:
-				result = True
-			if grant.cidr_ip != None:
-				network = IPNetwork(grant.cidr_ip)
-			 	if instance.private_ip_address != None and IPAddress(instance.private_ip_address) in network:
-					result = True
-				if instance.ip_address != None and IPAddress(instance.ip_address) in network:
-					result = True
-		return result
 
 	def get_networks_of_rule_refering_to_external_address(self, vpc, rule):
 		cidrs = set(map(lambda grant : grant.cidr_ip, filter(lambda g : g.cidr_ip != None, rule.grants)))
@@ -115,6 +118,18 @@ class AWSVisualizer:
 		for vpc in self.vpcs:
 			self.find_all_groups_refering_outside_ip_address_in_vpc(vpc.id)
 		
+	def is_grantee_of_security_rule(self, rule, instance):
+		result = False
+		for grant in rule.grants:
+			if grant.group_id in self.assigned_security_groups[instance.id]:
+				result = True
+			if grant.cidr_ip != None:
+				network = IPNetwork(grant.cidr_ip)
+			 	if instance.private_ip_address != None and IPAddress(instance.private_ip_address) in network:
+					result = True
+				if instance.ip_address != None and IPAddress(instance.ip_address) in network:
+					result = True
+		return result
 	
 	def is_grantee_of_security_group(self, security_group, instance):
 		result = False
@@ -136,7 +151,73 @@ class AWSVisualizer:
 			if security_group.id in self.assigned_security_groups[instance.id]:
 				result.update([instance.id])
 		return result
+	def get_instance_name(self, instance):
+		return instance.tags['Name'] if 'Name' in instance.tags else instance.id
 		
+	def rule_key(self, rule):
+		protocol = rule.ip_protocol if rule.ip_protocol != "-1" else "all"
+		from_port = rule.from_port if rule.from_port else "Any"
+		to_port = rule.to_port if rule.to_port  else "Any"
+		return  "%s(%s-%s)" % (protocol, from_port, to_port)
+
+	def get_security_group_table(self, instance):
+		rule_table = {}
+		all_sources = set()
+		for sg in instance.groups:
+			group = self.get_security_group_by_id(sg.id)
+			for rule in group.rules:
+				range = self.rule_key(rule)
+				rule_table[range] = set()
+				for grant in rule.grants:
+					if grant.cidr_ip != None:
+						all_sources.update([grant.cidr_ip])
+						rule_table[range].update([grant.cidr_ip])
+					if grant.group_id != None:
+						src_group = self.get_security_group_by_id(grant.group_id)
+						for source in self.find_instances_with_assigned_security_group(src_group):
+							src_instance = self.get_instance_by_id(source)
+							name = self.get_instance_name(src_instance)
+							all_sources.update([name])
+							rule_table[range].update([name])
+		return rule_table, all_sources
+
+	def get_full_security_group_table(self):
+		all_sources = set()
+		alL_tables = {}
+		for instance in self.instances:
+			all_tables[instance.id], sources = self.get_security_group_table(instance)
+			all_sources.update(sources)
+
+		for source in all_sources:
+			sys.stdout.write('\t')
+			sys.stdout.write(str(source))
+		sys.stdout.write('\n')
+		# to complete
+			
+		
+			
+
+	def print_security_group_tables(self):
+		file =  open("%s/security_groups.txt" % (self.directory), 'w')
+		for instance in self.instances:
+			self.print_security_group_table(instance, file)
+		file.flush()
+		file.close()
+
+	def print_security_group_table(self, instance, file):
+		rule_table, all_sources  = self.get_security_group_table(instance)
+		file.write("%s" % self.get_instance_name(instance))
+		for source in all_sources:
+			file.write('\t')
+			file.write(str(source))
+		file.write('\n')
+		for rule in rule_table:
+			file.write(str(rule))
+			for source in all_sources:
+				file.write('\t')
+				if source in rule_table[rule]:
+					file.write('X')
+			file.write('\n')
 	
 	def get_instances_in_vpc(self, vpc_id):
 		result = []
@@ -266,3 +347,4 @@ visualizer.region = options.region
 
 visualizer.connect()
 visualizer.print_dot()
+visualizer.print_security_group_tables()
