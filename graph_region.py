@@ -4,6 +4,7 @@ import boto.vpc
 import boto.ec2.elb
 from netaddr import IPNetwork, IPAddress
 import re
+from collections import defaultdict
 import sys
 
 class Arc:
@@ -151,74 +152,84 @@ class AWSVisualizer:
 			if security_group.id in self.assigned_security_groups[instance.id]:
 				result.update([instance.id])
 		return result
+
 	def get_instance_name(self, instance):
 		return instance.tags['Name'] if 'Name' in instance.tags else instance.id
 		
 	def rule_key(self, rule):
 		protocol = rule.ip_protocol if rule.ip_protocol != "-1" else "all"
-		from_port = rule.from_port if rule.from_port else "Any"
-		to_port = rule.to_port if rule.to_port  else "Any"
-		return  "%s(%s-%s)" % (protocol, from_port, to_port)
+		from_port = rule.from_port if rule.from_port and rule.from_port != "-1" else "any"
+		to_port = rule.to_port if rule.to_port and rule.from_port != "-1"   else "any"
 
-	def get_security_group_table(self, instance):
-		rule_table = {}
+		if from_port == to_port:
+			range = from_port
+		else:
+			range = "%s-%s" % (from_port, to_port)
+		if protocol == "tcp":
+			result = range
+		elif protocol == "icmp":
+			result = "icmp"
+		else:
+			result = "%s(%s)" % (protocol, range)
+
+		if protocol == "all" and from_port == "any" and to_port == "any":
+			result = "any"
+
+		return result
+
+	def get_security_table(self,vpc_id):
 		all_sources = set()
-		for sg in instance.groups:
-			group = self.get_security_group_by_id(sg.id)
-			for rule in group.rules:
-				range = self.rule_key(rule)
-				rule_table[range] = set()
-				for grant in rule.grants:
-					if grant.cidr_ip != None:
-						all_sources.update([grant.cidr_ip])
-						rule_table[range].update([grant.cidr_ip])
-					if grant.group_id != None:
-						src_group = self.get_security_group_by_id(grant.group_id)
-						for source in self.find_instances_with_assigned_security_group(src_group):
-							src_instance = self.get_instance_by_id(source)
-							name = self.get_instance_name(src_instance)
-							all_sources.update([name])
-							rule_table[range].update([name])
-		return rule_table, all_sources
+		all_targets = set()
+		security_table = defaultdict(dict)
+		for instance in self.get_instances_in_vpc(vpc_id):
+			dest_inst_name = self.get_instance_name(instance)
+			for sg in instance.groups:
+				group = self.get_security_group_by_id(sg.id)
+				for rule in group.rules:
+					range = self.rule_key(rule)
+					for grant in rule.grants:
+						if grant.cidr_ip != None:
+							if dest_inst_name not in security_table[grant.cidr_ip]:
+								security_table[grant.cidr_ip][dest_inst_name] = set()
+							security_table[grant.cidr_ip][dest_inst_name].update([range])
+							all_sources.update([grant.cidr_ip])
+							all_targets.update([dest_inst_name])
+						if grant.group_id != None:
+							src_group = self.get_security_group_by_id(grant.group_id)
+							for source in self.find_instances_with_assigned_security_group(src_group):
+								src_instance = self.get_instance_by_id(source)
+								name = self.get_instance_name(src_instance)
+								all_sources.update([name])
+								if dest_inst_name not in security_table[name]:
+									security_table[name][dest_inst_name] = set()
+								security_table[name][dest_inst_name].update([range])
+								all_targets.update([dest_inst_name])
+		return security_table, sorted(all_sources), sorted(all_targets)
 
-	def get_full_security_group_table(self):
-		all_sources = set()
-		alL_tables = {}
-		for instance in self.instances:
-			all_tables[instance.id], sources = self.get_security_group_table(instance)
-			all_sources.update(sources)
+	def print_security_group_table_in_vpc(self, vpc_id, file):
+		table, sources, targets = self.get_security_table(vpc_id)
+		file.write('<table title="security group relations in vpc %s" border="1"><tr><td></td>' % vpc_id)
+		for target in targets:
+			file.write('<td>%s</td>' % target)
+		file.write('</tr>\n')
+		for source in sources:
+			file.write('<tr><td>%s</td>' % source)
+			for target in targets:
+				if target in table[source]:
+					file.write('<td>%s</td>' % ",".join(table[source][target]))
+				else:
+					file.write('<td>%s</td>' % '&nbsp;')
+			file.write('</tr>\n')
+		file.write('</table>')
 
-		for source in all_sources:
-			sys.stdout.write('\t')
-			sys.stdout.write(str(source))
-		sys.stdout.write('\n')
-		# to complete
-			
-		
-			
-
+				
 	def print_security_group_tables(self):
-		file =  open("%s/security_groups.txt" % (self.directory), 'w')
-		for instance in self.instances:
-			self.print_security_group_table(instance, file)
-		file.flush()
-		file.close()
+		for vpc in self.vpcs:
+			file =  open("%s/%s-security-groups.html" % (self.directory, vpc.id), 'w')
+			self.print_security_group_table_in_vpc(vpc.id, file)
+			file.flush()
+			file.close()
 
-	def print_security_group_table(self, instance, file):
-		rule_table, all_sources  = self.get_security_group_table(instance)
-		file.write("%s" % self.get_instance_name(instance))
-		for source in all_sources:
-			file.write('\t')
-			file.write(str(source))
-		file.write('\n')
-		for rule in rule_table:
-			file.write(str(rule))
-			for source in all_sources:
-				file.write('\t')
-				if source in rule_table[rule]:
-					file.write('X')
-			file.write('\n')
-	
 	def get_instances_in_vpc(self, vpc_id):
 		result = []
 		for instance in self.instances:
@@ -308,6 +319,7 @@ class AWSVisualizer:
 
 		for arc in network_connections:
 			self.output.write('%s\n' % str(arc)) 
+
 
 class MultipleOption(Option):
     ACTIONS = Option.ACTIONS + ("extend",)
