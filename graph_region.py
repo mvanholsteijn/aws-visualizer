@@ -208,6 +208,13 @@ class AWSVisualizer:
 
 	def print_security_group_table_in_vpc(self, vpc_id, file):
 		table, sources, targets = self.get_security_table(vpc_id)
+		file.write ("""
+			<!DOCTYPE html PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+			<html>
+			<head>
+			<title>Security group overview of %s</title>
+			</head>
+			<body>""" %  vpc_id)
 		file.write('<table title="security group relations in vpc %s" border="1"><tr><td></td>' % vpc_id)
 		for target in targets:
 			file.write('<td>%s</td>' % target)
@@ -220,7 +227,7 @@ class AWSVisualizer:
 				else:
 					file.write('<td>%s</td>' % '&nbsp;')
 			file.write('</tr>\n')
-		file.write('</table>')
+		file.write('</table></body></html>')
 
 				
 	def print_security_group_tables(self):
