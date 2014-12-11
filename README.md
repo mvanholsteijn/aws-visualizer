@@ -3,6 +3,7 @@ aws-visualizer
 Visualizing an AWS region.
 
 Generates a DOT file, for each VPC in the region.
+Generates a security group HTML table showing all grants, for each VPC in the region.
 
 graph_region.py [--directory output-directory ] [ --show-external-only ] [ --use-subgraphs ] [--region aws-region] [--exclude-security-group security-group]
 

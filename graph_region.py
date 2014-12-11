@@ -57,6 +57,7 @@ class AWSVisualizer:
 		self.load_all_ips()
 		self.load_subnets()
 		self.load_assigned_security_groups()
+		self.load_assigned_lb_security_groups()
 
 	def get_security_group_by_id(self, id):
 		for group in self.security_groups:
@@ -91,7 +92,13 @@ class AWSVisualizer:
 				groups.update([security_group.id])
 			self.assigned_security_groups[instance.id] = groups
 
-
+	def load_assigned_lb_security_groups(self):
+		self.assigned_lb_security_groups = {}
+		for lb in self.loadbalancers:
+			groups = set()
+			for security_group in lb.security_groups:
+				groups.update([security_group])
+			self.assigned_lb_security_groups[lb.name] = groups
 
 	def get_networks_of_rule_refering_to_external_address(self, vpc, rule):
 		cidrs = set(map(lambda grant : grant.cidr_ip, filter(lambda g : g.cidr_ip != None, rule.grants)))
@@ -153,6 +160,13 @@ class AWSVisualizer:
 				result.update([instance.id])
 		return result
 
+	def find_loadbalancers_with_assigned_security_group(self,security_group):
+		result = set()
+		for lb in self.loadbalancers:
+			if security_group in self.assigned_lb_security_groups[lb.name]:
+				result.update([lb])
+		return result
+
 	def get_instance_name(self, instance):
 		return instance.tags['Name'] if 'Name' in instance.tags else instance.id
 		
@@ -177,6 +191,38 @@ class AWSVisualizer:
 
 		return result
 
+	def _add_security_group_to_table(self, dest_inst_name, security_group_id, all_sources, all_targets, security_table):
+		group = self.get_security_group_by_id(security_group_id)
+		for rule in group.rules:
+			range = self.rule_key(rule)
+			for grant in rule.grants:
+				if grant.cidr_ip != None:
+					if dest_inst_name not in security_table[grant.cidr_ip]:
+						security_table[grant.cidr_ip][dest_inst_name] = set()
+					security_table[grant.cidr_ip][dest_inst_name].update([range])
+					all_sources.update([grant.cidr_ip])
+					all_targets.update([dest_inst_name])
+				if grant.group_id != None:
+					src_group = self.get_security_group_by_id(grant.group_id)
+					sources = self.find_instances_with_assigned_security_group(src_group)
+					for source in sources:
+						src_instance = self.get_instance_by_id(source)
+						name = self.get_instance_name(src_instance)
+						all_sources.update([name])
+						if dest_inst_name not in security_table[name]:
+							security_table[name][dest_inst_name] = set()
+						security_table[name][dest_inst_name].update([range])
+						all_targets.update([dest_inst_name])
+
+					loadbalancers = self.find_loadbalancers_with_assigned_security_group(grant.group_id)
+					for loadbalancer in loadbalancers:
+						name = loadbalancer.name
+						all_sources.update([name])
+						if dest_inst_name not in security_table[name]:
+							security_table[name][dest_inst_name] = set()
+						security_table[name][dest_inst_name].update([range])
+						all_targets.update([dest_inst_name])
+
 	def get_security_table(self,vpc_id):
 		all_sources = set()
 		all_targets = set()
@@ -184,26 +230,13 @@ class AWSVisualizer:
 		for instance in self.get_instances_in_vpc(vpc_id):
 			dest_inst_name = self.get_instance_name(instance)
 			for sg in instance.groups:
-				group = self.get_security_group_by_id(sg.id)
-				for rule in group.rules:
-					range = self.rule_key(rule)
-					for grant in rule.grants:
-						if grant.cidr_ip != None:
-							if dest_inst_name not in security_table[grant.cidr_ip]:
-								security_table[grant.cidr_ip][dest_inst_name] = set()
-							security_table[grant.cidr_ip][dest_inst_name].update([range])
-							all_sources.update([grant.cidr_ip])
-							all_targets.update([dest_inst_name])
-						if grant.group_id != None:
-							src_group = self.get_security_group_by_id(grant.group_id)
-							for source in self.find_instances_with_assigned_security_group(src_group):
-								src_instance = self.get_instance_by_id(source)
-								name = self.get_instance_name(src_instance)
-								all_sources.update([name])
-								if dest_inst_name not in security_table[name]:
-									security_table[name][dest_inst_name] = set()
-								security_table[name][dest_inst_name].update([range])
-								all_targets.update([dest_inst_name])
+				self._add_security_group_to_table(dest_inst_name, sg.id, all_sources, all_targets, security_table)
+
+		for loadbalancer in self.get_loadbalancers_in_vpc(vpc_id):
+			dest_inst_name = loadbalancer.name
+			for sg in loadbalancer.security_groups:
+				self._add_security_group_to_table(dest_inst_name, sg, all_sources, all_targets, security_table)
+
 		return security_table, sorted(all_sources), sorted(all_targets)
 
 	def print_security_group_table_in_vpc(self, vpc_id, file):
@@ -243,6 +276,9 @@ class AWSVisualizer:
 			if instance.vpc_id == vpc_id:
 				result.append(instance)
 		return result
+
+	def get_loadbalancers_in_vpc(self, vpc_id):
+		return filter(lambda lb : lb.vpc_id == vpc_id, self.loadbalancers)
 
 	def get_instances_in_subnet(self, subnet_id):
 		result = []
