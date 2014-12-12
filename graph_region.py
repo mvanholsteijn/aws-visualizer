@@ -86,19 +86,15 @@ class AWSVisualizer:
 
 	def load_assigned_security_groups(self):
 		self.assigned_security_groups = {}
-		for instance in self.instances:
-			groups = set()
-			for security_group in instance.groups:
-				groups.update([security_group.id])
-			self.assigned_security_groups[instance.id] = groups
+	 	for instance in self.instances:
+			self.assigned_security_groups[instance] = set(map(lambda group : group.id, instance.groups))
+		print self.assigned_security_groups
 
 	def load_assigned_lb_security_groups(self):
 		self.assigned_lb_security_groups = {}
 		for lb in self.loadbalancers:
-			groups = set()
-			for security_group in lb.security_groups:
-				groups.update([security_group])
-			self.assigned_lb_security_groups[lb.name] = groups
+			self.assigned_lb_security_groups[lb] = set(lb.security_groups)
+		print self.assigned_lb_security_groups
 
 	def get_networks_of_rule_refering_to_external_address(self, vpc, rule):
 		cidrs = set(map(lambda grant : grant.cidr_ip, filter(lambda g : g.cidr_ip != None, rule.grants)))
@@ -122,14 +118,10 @@ class AWSVisualizer:
 				result[security_group] = networks
 		return result
 		
-	def find_all_groups_refering_outside_ip_address(self):
-		for vpc in self.vpcs:
-			self.find_all_groups_refering_outside_ip_address_in_vpc(vpc.id)
-		
 	def is_grantee_of_security_rule(self, rule, instance):
 		result = False
 		for grant in rule.grants:
-			if grant.group_id in self.assigned_security_groups[instance.id]:
+			if grant.group_id in self.assigned_security_groups[instance]:
 				result = True
 			if grant.cidr_ip != None:
 				network = IPNetwork(grant.cidr_ip)
@@ -147,30 +139,79 @@ class AWSVisualizer:
 		return result
 
 	def find_grantees_of_security_group(self,security_group):
-		result = set()
-		for instance in self.instances:
-			if self.is_grantee_of_security_group(security_group, instance):
-				result.update([instance.id])
-		return result
+		return set(filter(lambda instance : self.is_grantee_of_security_group(security_group, instance), self.instances))
+
+	def find_instances_in_network_in_vpc(self,vpc, network):
+		return set(filter(lambda instance : security_group.id in self.assigned_security_groups[instance], self.instances))
 
 	def find_instances_with_assigned_security_group(self,security_group):
-		result = set()
-		for instance in self.instances:
-			if security_group.id in self.assigned_security_groups[instance.id]:
-				result.update([instance.id])
-		return result
+		return set(filter(lambda instance : security_group.id in self.assigned_security_groups[instance], self.instances))
 
 	def find_loadbalancers_with_assigned_security_group(self,security_group):
-		result = set()
-		for lb in self.loadbalancers:
-			if security_group in self.assigned_lb_security_groups[lb.name]:
-				result.update([lb])
-		return result
+		return set(filter(lambda lb : security_group.id in self.assigned_lb_security_groups[lb], self.loadbalancers))
+
+	def  instance_in_network(self,instance, network):
+		return instance.private_ip_address != None and IPAddress(instance.private_ip_address) in network or \
+		       instance.ip_address != None and IPAddress(instance.ip_address) in network
+
+	def find_instances_in_network(self, network):
+		return set (filter(lambda instance : self.instance_in_network(instance, network) , self.instances_in_current_vpc))
 
 	def get_instance_name(self, instance):
 		return instance.tags['Name'] if 'Name' in instance.tags else instance.id
-		
-	def rule_key(self, rule):
+
+	def _add_rule_to_security_table(self, source, target, rule):
+		if source != target:
+			if target not in self.security_table[source]:
+				self.security_table[source][target] = set()
+			self.security_table[source][target].update([rule])
+			self.all_sources.update([source])
+			self.all_targets.update([target])
+
+	def _add_security_group_to_table(self, target, group):
+		for rule in group.rules:
+			print "-r- %s" % rule if group.id == 'sg-505dd735' else ""
+			for grant in rule.grants:
+				if grant.cidr_ip != None:
+					print '-g- %s' % grant.cidr_ip if group.id == 'sg-505dd735' else ""
+					network = IPNetwork(grant.cidr_ip)
+					self._add_rule_to_security_table(network, target, rule)
+
+					#sources = self.find_instances_in_network(network)
+					#for source in sources:
+					#	self._add_rule_to_security_table(source, target, rule)
+
+				if grant.group_id != None:
+					granted_group = self.get_security_group_by_id(grant.group_id)
+
+					sources = self.find_instances_with_assigned_security_group(granted_group)
+					print self.assigned_security_groups if group.id == 'sg-505dd735' else ""
+					for source in sources:
+						self._add_rule_to_security_table(source, target, rule)
+
+					loadbalancers = self.find_loadbalancers_with_assigned_security_group(granted_group)
+					for loadbalancer in loadbalancers:
+						self._add_rule_to_security_table(loadbalancer, target, rule)
+
+	def load_security_table_of_vpc(self,vpc_id):
+		self.all_sources = set()
+		self.all_targets = set()
+		self.security_table = defaultdict(dict)
+		self.instances_in_current_vpc = self.get_instances_in_vpc(vpc_id)
+		for instance in self.instances_in_current_vpc:
+			for sg in instance.groups:
+				group = self.get_security_group_by_id(sg.id)
+				self._add_security_group_to_table(instance, group)
+
+		for loadbalancer in self.get_loadbalancers_in_vpc(vpc_id):
+			for sg in loadbalancer.security_groups:
+				group = self.get_security_group_by_id(sg)
+				print "> target %s" % loadbalancer
+				print "--> %s" % group.id
+				print self.assigned_lb_security_groups[loadbalancer]
+				self._add_security_group_to_table(loadbalancer, group)
+
+	def rule_as_string(self, rule):
 		protocol = rule.ip_protocol if rule.ip_protocol != "-1" else "all"
 		from_port = rule.from_port if rule.from_port and rule.from_port != "-1" else "any"
 		to_port = rule.to_port if rule.to_port and rule.from_port != "-1"   else "any"
@@ -191,110 +232,86 @@ class AWSVisualizer:
 
 		return result
 
-	def _add_security_group_to_table(self, dest_inst_name, security_group_id, all_sources, all_targets, security_table):
-		group = self.get_security_group_by_id(security_group_id)
-		for rule in group.rules:
-			range = self.rule_key(rule)
-			for grant in rule.grants:
-				if grant.cidr_ip != None:
-					if dest_inst_name not in security_table[grant.cidr_ip]:
-						security_table[grant.cidr_ip][dest_inst_name] = set()
-					security_table[grant.cidr_ip][dest_inst_name].update([range])
-					all_sources.update([grant.cidr_ip])
-					all_targets.update([dest_inst_name])
-				if grant.group_id != None:
-					src_group = self.get_security_group_by_id(grant.group_id)
-					sources = self.find_instances_with_assigned_security_group(src_group)
-					for source in sources:
-						src_instance = self.get_instance_by_id(source)
-						name = self.get_instance_name(src_instance)
-						all_sources.update([name])
-						if dest_inst_name not in security_table[name]:
-							security_table[name][dest_inst_name] = set()
-						security_table[name][dest_inst_name].update([range])
-						all_targets.update([dest_inst_name])
+	def get_name(self,object):
+		if hasattr(object, 'name'):
+			name = object.name
+		elif hasattr(object, 'tags') and 'Name' in object.tags:
+			name = object.tags['Name'] 
+		elif hasattr(object, 'id'):
+			name = object.id
+		else:
+			name = str(object)
+		return name
 
-					loadbalancers = self.find_loadbalancers_with_assigned_security_group(grant.group_id)
-					for loadbalancer in loadbalancers:
-						name = loadbalancer.name
-						all_sources.update([name])
-						if dest_inst_name not in security_table[name]:
-							security_table[name][dest_inst_name] = set()
-						security_table[name][dest_inst_name].update([range])
-						all_targets.update([dest_inst_name])
-
-	def get_security_table(self,vpc_id):
-		all_sources = set()
-		all_targets = set()
-		security_table = defaultdict(dict)
-		for instance in self.get_instances_in_vpc(vpc_id):
-			dest_inst_name = self.get_instance_name(instance)
-			for sg in instance.groups:
-				self._add_security_group_to_table(dest_inst_name, sg.id, all_sources, all_targets, security_table)
-
-		for loadbalancer in self.get_loadbalancers_in_vpc(vpc_id):
-			dest_inst_name = loadbalancer.name
-			for sg in loadbalancer.security_groups:
-				self._add_security_group_to_table(dest_inst_name, sg, all_sources, all_targets, security_table)
-
-		return security_table, sorted(all_sources), sorted(all_targets)
-
-	def print_security_group_table_in_vpc(self, vpc_id, file):
-		table, sources, targets = self.get_security_table(vpc_id)
-		file.write ("""
-			<!DOCTYPE html PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
-			<html>
-			<head>
-			<title>Security group overview of %s</title>
-			</head>
-			<body>""" %  vpc_id)
-		file.write('<table title="security group relations in vpc %s" border="1"><tr><td></td>' % vpc_id)
-		for target in targets:
-			file.write('<td>%s</td>' % target)
+	def print_security_group_table(self, vpc, file):
+		file.write ('<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">\n')
+		file.write ('<html><head>\n')
+		file.write ('<title>Security group overview of %s</title>\n' % vpc)
+		file.write ('</head><body>\n')
+		file.write('<table title="security group relations in vpc %s" border="1"><tr><td></td>' % vpc)
+		for target in self.all_targets:
+			file.write('<td>%s</td>' % self.get_name(target))
 		file.write('</tr>\n')
-		for source in sources:
-			file.write('<tr><td>%s</td>' % source)
-			for target in targets:
-				if target in table[source]:
-					file.write('<td>%s</td>' % ",".join(table[source][target]))
+		for source in self.all_sources:
+			file.write('<tr><td>%s</td>' % self.get_name(source))
+			for target in self.all_targets:
+				if target in self.security_table[source]:
+					file.write('<td>%s</td>' % ",".join(map(lambda permission : self.rule_as_string(permission), self.security_table[source][target])))
 				else:
 					file.write('<td>%s</td>' % '&nbsp;')
 			file.write('</tr>\n')
 		file.write('</table></body></html>')
 
+	def print_security_group_table_dot(self, vpc, file):
+		file.write('digraph vpc {\n')
+		name = vpc.tags['Name'] if 'Name' in vpc.tags else vpc.id
+		file.write('label = "%s - %s";\n' % (name, vpc.cidr_block))
+
+		for subnet in self.subnets[vpc.id]:
+			subnet_instances = self.get_instances_in_subnet(subnet.id)
+			loadbalancers = self.get_loadbalancers_in_subnet(subnet.id)
+			# TODO, Loadbalancers may be placed in multiple subnets 
+			if len(subnet_instances) or len(loadbalancers):
+				if self.use_subgraphs:
+					name = subnet.tags['Name'] if 'Name' in subnet.tags else subnet.id
+					file.write('subgraph "cluster-%s" {\n' % (subnet.id))
+					file.write('label = "%s";\n' % name)
+				for instance in subnet_instances:
+					name = instance.tags['Name'] if 'Name' in instance.tags else instance.id
+					ip = instance.ip_address if instance.ip_address else ""
+					file.write('"%s" [label="%s\\n%s"];\n' % (instance, name, ip))
+				if self.use_subgraphs:
+					file.write('}\n')
+		if(not self.show_external_only):
+			for source in self.all_sources:
+				for target in self.all_targets:
+					if target in self.security_table[source]:
+						file.write('"%s" -> "%s";\n' %( source, target))
+		file.write('}\n')
+		
 				
 	def print_security_group_tables(self):
 		for vpc in self.vpcs:
+			self.load_security_table_of_vpc(vpc.id)
 			file =  open("%s/%s-security-groups.html" % (self.directory, vpc.id), 'w')
-			self.print_security_group_table_in_vpc(vpc.id, file)
-			file.flush()
+			self.print_security_group_table(vpc, file)
+			file.close()
+
+			file =  open("%s/%s-security-groups.dot" % (self.directory, vpc.id), 'w')
+			self.print_security_group_table_dot(vpc, file)
 			file.close()
 
 	def get_instances_in_vpc(self, vpc_id):
-		result = []
-		for instance in self.instances:
-			if instance.vpc_id == vpc_id:
-				result.append(instance)
-		return result
+		return filter(lambda instance : instance.vpc_id == vpc_id, self.instances)
 
 	def get_loadbalancers_in_vpc(self, vpc_id):
 		return filter(lambda lb : lb.vpc_id == vpc_id, self.loadbalancers)
 
 	def get_instances_in_subnet(self, subnet_id):
-		result = []
-		for instance in self.instances:
-			if instance.subnet_id == subnet_id:
-				result.append(instance)
-		return result
+		return filter(lambda instance : instance.subnet_id == subnet_id, self.instances)
 
 	def get_loadbalancers_in_subnet(self, subnet_id):
-		result = []
-		for loadbalancer in self.loadbalancers:
-			for subnet in loadbalancer.subnets:
-				if subnet == subnet_id:
-					result.append(loadbalancer)
-		return result
-		
+		return filter(lambda lb : subnet_id in lb.subnets, self.loadbalancers)
 
 	def print_dot(self):
 		for vpc in self.vpcs:
@@ -306,12 +323,13 @@ class AWSVisualizer:
 			for subnet in self.subnets[vpc.id]:
 				subnet_instances = self.get_instances_in_subnet(subnet.id)
 				loadbalancers = self.get_loadbalancers_in_subnet(subnet.id)
+				# TODO, Loadbalancers may be placed in multiple subnets 
 				if len(subnet_instances) or len(loadbalancers):
 					if self.use_subgraphs:
 						name = subnet.tags['Name'] if 'Name' in subnet.tags else subnet.id
 						self.output.write('subgraph "cluster-%s" {\n' % (subnet.id))
 						self.output.write('label = "%s";\n' % name)
-					for instance in  subnet_instances:
+					for instance in subnet_instances:
 						name = instance.tags['Name'] if 'Name' in instance.tags else instance.id
 						ip = instance.ip_address if instance.ip_address else ""
 						self.output.write('"%s" [label="%s\\n%s"];\n' % (instance.id, name, ip))
@@ -326,7 +344,6 @@ class AWSVisualizer:
 	def print_external_networks(self, vpc):
 		groups = self.find_all_groups_refering_outside_ip_address_in_vpc(vpc)
 		instances_in_vpc = self.get_instances_in_vpc(vpc)
-		instance_ids_in_vpc = map(lambda instance: instance.id, instances_in_vpc)
 		network_connections = set()
 		networks = set()
 		if self.use_subgraphs:
@@ -334,7 +351,7 @@ class AWSVisualizer:
 			self.output.write('label = "external";\n')
 
 		for group in groups:
-			grantors = self.find_instances_with_assigned_security_group(group).intersection(instance_ids_in_vpc)
+			grantors = self.find_instances_with_assigned_security_group(group).intersection(instances_in_vpc)
 			for grantor in grantors:
 				for network in groups[group]:
 					networks.update([network])
