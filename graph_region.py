@@ -155,9 +155,6 @@ class AWSVisualizer:
 	def find_instances_in_network(self, network):
 		return set (filter(lambda instance : self.instance_in_network(instance, network) , self.instances_in_current_vpc))
 
-	def get_instance_name(self, instance):
-		return instance.tags['Name'] if 'Name' in instance.tags else instance.id
-
 	def _add_rule_to_security_table(self, source, target, rule):
 		if source != target:
 			if target not in self.security_table[source]:
@@ -172,10 +169,6 @@ class AWSVisualizer:
 				if grant.cidr_ip != None:
 					network = IPNetwork(grant.cidr_ip)
 					self._add_rule_to_security_table(network, target, rule)
-
-					#sources = self.find_instances_in_network(network)
-					#for source in sources:
-					#	self._add_rule_to_security_table(source, target, rule)
 
 				if grant.group_id != None:
 					granted_group = self.get_security_group_by_id(grant.group_id)
