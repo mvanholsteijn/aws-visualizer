@@ -26,8 +26,8 @@ class Arc:
 
 class AWSVisualizer:
 	def __init__(self):
-		self.show_external_only = False
-		self.use_subgraphs = True
+		self.use_security_group_subgraphs = False
+		self.use_subnets = False
 		self.directory = '.'
 		self.vpcs = None
 		self.instances = None
@@ -88,13 +88,11 @@ class AWSVisualizer:
 		self.assigned_security_groups = {}
 	 	for instance in self.instances:
 			self.assigned_security_groups[instance] = set(map(lambda group : group.id, instance.groups))
-		print self.assigned_security_groups
 
 	def load_assigned_lb_security_groups(self):
 		self.assigned_lb_security_groups = {}
 		for lb in self.loadbalancers:
 			self.assigned_lb_security_groups[lb] = set(lb.security_groups)
-		print self.assigned_lb_security_groups
 
 	def get_networks_of_rule_refering_to_external_address(self, vpc, rule):
 		cidrs = set(map(lambda grant : grant.cidr_ip, filter(lambda g : g.cidr_ip != None, rule.grants)))
@@ -170,10 +168,8 @@ class AWSVisualizer:
 
 	def _add_security_group_to_table(self, target, group):
 		for rule in group.rules:
-			print "-r- %s" % rule if group.id == 'sg-505dd735' else ""
 			for grant in rule.grants:
 				if grant.cidr_ip != None:
-					print '-g- %s' % grant.cidr_ip if group.id == 'sg-505dd735' else ""
 					network = IPNetwork(grant.cidr_ip)
 					self._add_rule_to_security_table(network, target, rule)
 
@@ -185,7 +181,6 @@ class AWSVisualizer:
 					granted_group = self.get_security_group_by_id(grant.group_id)
 
 					sources = self.find_instances_with_assigned_security_group(granted_group)
-					print self.assigned_security_groups if group.id == 'sg-505dd735' else ""
 					for source in sources:
 						self._add_rule_to_security_table(source, target, rule)
 
@@ -206,9 +201,6 @@ class AWSVisualizer:
 		for loadbalancer in self.get_loadbalancers_in_vpc(vpc_id):
 			for sg in loadbalancer.security_groups:
 				group = self.get_security_group_by_id(sg)
-				print "> target %s" % loadbalancer
-				print "--> %s" % group.id
-				print self.assigned_lb_security_groups[loadbalancer]
 				self._add_security_group_to_table(loadbalancer, group)
 
 	def rule_as_string(self, rule):
@@ -262,17 +254,30 @@ class AWSVisualizer:
 			file.write('</tr>\n')
 		file.write('</table></body></html>')
 
-	def print_security_group_table_dot(self, vpc, file):
-		file.write('digraph vpc {\n')
-		name = vpc.tags['Name'] if 'Name' in vpc.tags else vpc.id
-		file.write('label = "%s - %s";\n' % (name, vpc.cidr_block))
+	def print_security_group_partition_dot(self, vpc, file):
+			partition = defaultdict()
+			for instance in self.instances_in_current_vpc:
+				key = ",".join(map(lambda group : group.id, instance.groups))
+				if not key in partition:
+					partition[key] = set()
+				partition[key].update([instance])
 
+			count=0
+			for group in partition:
+				count += 1
+				file.write('subgraph "cluster-%d" {\n' % (count))
+				file.write('label = "%s";\n' % group)
+				for instance in partition[group]:
+					file.write('"%s" [label="%s"];\n' % (instance, self.get_name(instance)))
+				file.write('}\n');
+
+	def print_security_group_subnets_dot(self, vpc, file):
 		for subnet in self.subnets[vpc.id]:
 			subnet_instances = self.get_instances_in_subnet(subnet.id)
 			loadbalancers = self.get_loadbalancers_in_subnet(subnet.id)
 			# TODO, Loadbalancers may be placed in multiple subnets 
 			if len(subnet_instances) or len(loadbalancers):
-				if self.use_subgraphs:
+				if self.use_subnets:
 					name = subnet.tags['Name'] if 'Name' in subnet.tags else subnet.id
 					file.write('subgraph "cluster-%s" {\n' % (subnet.id))
 					file.write('label = "%s";\n' % name)
@@ -280,13 +285,30 @@ class AWSVisualizer:
 					name = instance.tags['Name'] if 'Name' in instance.tags else instance.id
 					ip = instance.ip_address if instance.ip_address else ""
 					file.write('"%s" [label="%s\\n%s"];\n' % (instance, name, ip))
-				if self.use_subgraphs:
+				if self.use_subnets:
 					file.write('}\n')
-		if(not self.show_external_only):
-			for source in self.all_sources:
-				for target in self.all_targets:
-					if target in self.security_table[source]:
-						file.write('"%s" -> "%s";\n' %( source, target))
+			
+	def print_security_group_table_dot(self, vpc, file):
+		file.write('digraph vpc {\n')
+		name = vpc.tags['Name'] if 'Name' in vpc.tags else vpc.id
+		file.write('label = "%s - %s";\n' % (name, vpc.cidr_block))
+
+		
+		if self.use_subnets:
+			self.print_security_group_subnets_dot(vpc, file)
+		elif self.use_security_group_subgraphs:
+			self.print_security_group_partition_dot(vpc, file)
+                else:
+			for node in self.all_sources.union(self.all_targets):
+				file.write('"%s" [label="%s"];\n' % (node, self.get_name(node)))
+
+		for source in self.all_sources:
+			for target in self.all_targets:
+				if target in self.security_table[source]:
+					file.write('"%s" -> "%s";\n' % (source, target))
+
+	
+
 		file.write('}\n')
 		
 				
@@ -313,73 +335,6 @@ class AWSVisualizer:
 	def get_loadbalancers_in_subnet(self, subnet_id):
 		return filter(lambda lb : subnet_id in lb.subnets, self.loadbalancers)
 
-	def print_dot(self):
-		for vpc in self.vpcs:
-			self.output = open("%s/%s.dot" % (self.directory, vpc.id), 'w')
-			self.output.write('digraph vpc {\n')
-			name = vpc.tags['Name'] if 'Name' in vpc.tags else vpc.id
-			self.output.write('label = "%s - %s";\n' % (name, vpc.cidr_block))
-
-			for subnet in self.subnets[vpc.id]:
-				subnet_instances = self.get_instances_in_subnet(subnet.id)
-				loadbalancers = self.get_loadbalancers_in_subnet(subnet.id)
-				# TODO, Loadbalancers may be placed in multiple subnets 
-				if len(subnet_instances) or len(loadbalancers):
-					if self.use_subgraphs:
-						name = subnet.tags['Name'] if 'Name' in subnet.tags else subnet.id
-						self.output.write('subgraph "cluster-%s" {\n' % (subnet.id))
-						self.output.write('label = "%s";\n' % name)
-					for instance in subnet_instances:
-						name = instance.tags['Name'] if 'Name' in instance.tags else instance.id
-						ip = instance.ip_address if instance.ip_address else ""
-						self.output.write('"%s" [label="%s\\n%s"];\n' % (instance.id, name, ip))
-					if self.use_subgraphs:
-						self.output.write('}\n')
-			if(not self.show_external_only):
-				self.print_security_group_relations(vpc.id)
-			self.print_external_networks(vpc.id)
-			self.output.write('}\n')
-			self.output.close()
-
-	def print_external_networks(self, vpc):
-		groups = self.find_all_groups_refering_outside_ip_address_in_vpc(vpc)
-		instances_in_vpc = self.get_instances_in_vpc(vpc)
-		network_connections = set()
-		networks = set()
-		if self.use_subgraphs:
-			self.output.write('subgraph "cluster-external-%s" {\n' % (vpc))
-			self.output.write('label = "external";\n')
-
-		for group in groups:
-			grantors = self.find_instances_with_assigned_security_group(group).intersection(instances_in_vpc)
-			for grantor in grantors:
-				for network in groups[group]:
-					networks.update([network])
-					source = str(network) if self.show_external_only else "external"
-					network_connections.update([Arc(source, grantor)])
-
-		if not self.show_external_only:
-			self.output.write('"external" [label="%s"];\n' % ' '.join(str(n) for n in networks))
-
-		for arc in network_connections:
-			self.output.write('%s\n' % str(arc)) 
-
-		if self.use_subgraphs:
-			self.output.write('}\n')
-
-	def print_security_group_relations(self, vpc):
-		network_connections = set()
-		instances_in_vpc = map(lambda instance: instance.id, self.get_instances_in_vpc(vpc))
-		for security_group in self.security_groups:
-			grantees = self.find_grantees_of_security_group(security_group)
-			grantors = self.find_instances_with_assigned_security_group(security_group)
-			for grantee in grantees.intersection(instances_in_vpc):
-				for grantor in grantors.intersection(instances_in_vpc):
-					network_connections.update([Arc(grantee, grantor)])
-
-		for arc in network_connections:
-			self.output.write('%s\n' % str(arc)) 
-
 
 class MultipleOption(Option):
     ACTIONS = Option.ACTIONS + ("extend",)
@@ -396,12 +351,12 @@ class MultipleOption(Option):
 parser = OptionParser(option_class=MultipleOption)
 parser.add_option("-d", "--directory", dest="directory", default=".",
                   help="output directory defaults to .", metavar="DIRECTORY")
-parser.add_option("-s", "--use-subgraphs",
-                  action="store_true", dest="use_subgraphs", default=False,
+parser.add_option("-n", "--use-subnets",
+                  action="store_true", dest="use_subnets", default=False,
                   help="use subnet subgraphs")
-parser.add_option("-e", "--show-external-only",
-                  action="store_true", dest="show_external_only", default=False,
-                  help="only show external network connections")
+parser.add_option("-s", "--use-security-group-subgraphs",
+                  action="store_true", dest="use_security_group_subgraphs", default=False,
+                  help="use security group subgraphs")
 parser.add_option("-x", "--exclude-security-group",
                   action="extend", type="string", dest="exclude_security_group", metavar="SECURITY-GROUP",
                   help="exclude security group")
@@ -411,12 +366,11 @@ parser.add_option("-r", "--region",
 
 (options, args) = parser.parse_args()
 visualizer = AWSVisualizer()
-visualizer.use_subgraphs = options.use_subgraphs
+visualizer.use_security_group_subgraphs = options.use_security_group_subgraphs
+visualizer.use_subnets = options.use_subnets
 visualizer.directory = options.directory
-visualizer.show_external_only = options.show_external_only
 visualizer.exclude_security_group= options.exclude_security_group
 visualizer.region = options.region
 
 visualizer.connect()
-visualizer.print_dot()
 visualizer.print_security_group_tables()

@@ -28,15 +28,15 @@ fi
 
 rm -rf target
 mkdir -p target/default
-mkdir -p target/external
+mkdir -p target/securitygroups
 mkdir -p target/subnets
 
 echo INFO: graphing default dependencies
 python graph_region.py  --directory target/default $@
 echo INFO: graphing with subnets
-python graph_region.py  --directory target/subnets --use-subgraphs $@
-echo INFO: graphing external connections
-python graph_region.py  --directory target/external --show-external-only --use-subgraphs $@
+python graph_region.py  --directory target/subnets --use-subnets $@
+echo INFO: graphing with security groups 
+python graph_region.py  --directory target/securitygroups --use-security-group-subgraphs $@
 
 
 DOT=$(which dot)
