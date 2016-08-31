@@ -1,4 +1,6 @@
-from optparse import OptionParser, Option
+import argparse
+
+
 import boto3
 from netaddr import IPNetwork, IPAddress
 import re
@@ -22,6 +24,23 @@ class Arc:
 
 	def __hash__(self):
 		return self.source.__hash__()
+
+class Subnet(dict):
+	def __init__(self, source):
+		self.update(source)
+
+	def __key(self):
+		return self['SubnetId']
+
+	def __hash__(self):
+		return hash(self.__key())
+
+	def __eq__(self, other):
+		return self.__key() == other.__key()
+
+	def __str__(self):
+		return str(self.__key())
+
 
 class Vpc(dict):
 	def __init__(self, source):
@@ -172,7 +191,7 @@ class AWSVisualizer:
 	def load_subnets(self):
 		self.subnets = {}
 		for vpc in self.vpcs:
-			self.subnets[vpc['VpcId']] = self.EC2.describe_subnets(Filters=[{'Name': 'vpc-id', 'Values': [vpc['VpcId']]}])
+			self.subnets[vpc['VpcId']] = map(lambda s: Subnet(s), self.EC2.describe_subnets(Filters=[{'Name': 'vpc-id', 'Values': [vpc['VpcId']]}])['Subnets'])
 
 	def load_assigned_security_groups(self):
 		self.assigned_security_groups = {}
@@ -254,6 +273,9 @@ class AWSVisualizer:
 			self.security_table[source][target].update([rule])
 
 	def _add_security_group_to_table(self, target, group):
+		if group['GroupId'] in self.exclude_security_groups:
+			return
+
 		for rule in map(lambda r: IpPermissions(r), group['IpPermissions']):
 			if 'IpRanges' in rule:
 				for cidr in rule['IpRanges']:
@@ -359,17 +381,17 @@ class AWSVisualizer:
 
 	def print_security_group_subnets_dot(self, vpc, file):
 		for subnet in self.subnets[vpc['VpcId']]:
-			subnet_instances = self.get_instances_in_subnet(subnet.id)
-			loadbalancers = self.get_loadbalancers_in_subnet(subnet.id)
+			subnet_instances = self.get_instances_in_subnet(subnet['SubnetId'])
+			loadbalancers = self.get_loadbalancers_in_subnet(subnet['SubnetId'])
 			# TODO, Loadbalancers may be placed in multiple subnets 
 			if len(subnet_instances) or len(loadbalancers):
 				if self.use_subnets:
-					name = subnet.tags['Name'] if 'Name' in subnet.tags else subnet.id
-					file.write('subgraph "cluster-%s" {\n' % (subnet.id))
+					name = self.get_name(subnet)
+					file.write('subgraph "cluster-%s" {\n' % (subnet['SubnetId']))
 					file.write('label = "%s";\n' % name)
 				for instance in subnet_instances:
-					name = instance.tags['Name'] if 'Name' in instance.tags else instance['InstanceId']
-					ip = instance.ip_address if instance.ip_address else ""
+					name = self.get_name(instance)
+					ip = instance['PublicIp'] if 'PublicIp' in instance else ""
 					file.write('"%s" [label="%s\\n%s"];\n' % (instance, name, ip))
 				if self.use_subnets:
 					file.write('}\n')
@@ -419,46 +441,35 @@ class AWSVisualizer:
 		return filter(lambda instance : instance['SubnetId'] == subnet_id, self.instances)
 
 	def get_loadbalancers_in_subnet(self, subnet_id):
-		return filter(lambda lb : subnet_id in lb.subnets, self.loadbalancers)
+		return filter(lambda lb : subnet_id in lb['Subnets'], self.loadbalancers)
 
 
-class MultipleOption(Option):
-    ACTIONS = Option.ACTIONS + ("extend",)
-    STORE_ACTIONS = Option.STORE_ACTIONS + ("extend",)
-    TYPED_ACTIONS = Option.TYPED_ACTIONS + ("extend",)
-    ALWAYS_TYPED_ACTIONS = Option.ALWAYS_TYPED_ACTIONS + ("extend",)
-
-    def take_action(self, action, dest, opt, value, values, parser):
-        if action == "extend":
-            values.ensure_value(dest, []).append(value)
-        else:
-            Option.take_action(self, action, dest, opt, value, values, parser)
-
-parser = OptionParser(option_class=MultipleOption)
-parser.add_option("-d", "--directory", dest="directory", default=".",
+parser = argparse.ArgumentParser(description='Process some integers.')
+parser.add_argument("-d", "--directory", dest="directory", default=".",
                   help="output directory defaults to .", metavar="DIRECTORY")
-parser.add_option("-n", "--use-subnets",
+parser.add_argument("-n", "--use-subnets",
                   action="store_true", dest="use_subnets", default=False,
                   help="use subnet subgraphs")
-parser.add_option("-s", "--use-security-group-subgraphs",
+parser.add_argument("-s", "--use-security-group-subgraphs",
                   action="store_true", dest="use_security_group_subgraphs", default=False,
                   help="use security group subgraphs")
-parser.add_option("-x", "--exclude-security-group",
-                  action="extend", type="string", dest="exclude_security_group", metavar="SECURITY-GROUP",
+parser.add_argument("-x", "--exclude-security-group",
+                  action="append", dest="exclude_security_groups", metavar="SECURITY-GROUP",
                   help="exclude security group")
-parser.add_option("-p", "--profile",
+parser.add_argument("-p", "--profile",
                   dest="profile", default="default",
                   help="select the AWS profile to use")
-parser.add_option("-r", "--region",
+parser.add_argument("-r", "--region",
                   dest="region", default="eu-west-1",
                   help="select region to graph")
 
-(options, args) = parser.parse_args()
+options = parser.parse_args()
 visualizer = AWSVisualizer()
 visualizer.use_security_group_subgraphs = options.use_security_group_subgraphs
 visualizer.use_subnets = options.use_subnets
 visualizer.directory = options.directory
-visualizer.exclude_security_group= options.exclude_security_group
+if options.exclude_security_groups:
+	visualizer.exclude_security_groups = options.exclude_security_groups
 visualizer.region = options.region
 visualizer.profile = options.profile
 
