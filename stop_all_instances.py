@@ -28,12 +28,15 @@ class InstanceStopper:
 				if self.exclude_tag_value:
 					filter = {'resource-id' : instance.id,  'tag-value': self.exclude_tag_value}
 					tags = self.EC2.get_all_tags(filters=filter)
+					print "%s	- %s" % ((instance.tags['Name'] if 'Name' in instance.tags else instance.id), tags)
 					if len(tags) == 0 :
 						to_stop.append(instance)
 				else:
 					to_stop.append(instance)
 
 		if len(to_stop) > 0: 
+			for instance in to_stop:
+				print "	- %s" % (instance.tags['Name'] if 'Name' in instance.tags else instance.id)
 			print 'INFO: stopping %d out of %d instances.' % (len(to_stop), len(self.instances))
 			if self.force or self.dry_run:
 				answer = "yes"
