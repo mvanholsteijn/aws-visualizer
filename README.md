@@ -5,11 +5,15 @@ Visualizing an AWS region.
 Generates a DOT file, for each VPC in the region.
 Generates a security group HTML table showing all grants, for each VPC in the region.
 
-graph_region.py [--directory output-directory ] 
+graph\_region.py [--directory output-directory ] 
 	[ --use-subnets | --use-security-group-subgraphs ] 
+	[--profile aws-profile] 
 	[--region aws-region] 
 	[--exclude-security-group security-group]
 	[--no-dot-output]
+
+--profile aws-profile
+	to use to connect 
 
 --region aws-region
 	to graph vpc's of
@@ -38,9 +42,9 @@ INSTALL
 
 Authenticating
 --------------
-AWS Visualizer uses the `boto` library to make it's calls to the AWS API.  As
+AWS Visualizer uses the `boto3` library to make it's calls to the AWS API.  As
 such it supports all of the tratitional boto mechanisms for [specifying
-credentials](http://boto.cloudhackers.com/en/latest/boto_config_tut.html).
+credentials](http://boto3.readthedocs.io/en/latest/guide/configuration.html#guide-configuration)
 
 Given the following `~/.aws/credentials` file:
 
@@ -62,8 +66,8 @@ aws_security_token = <optional security token for this profile>
 One can differentiate between different profiles by running commands like:
 
 ```
-AWS_PROFILE=name_goes_here python graph_region.py --directory /tmp/ --use-subnets --region us-west-1
-AWS_PROFILE=another_profile python graph_region.py --directory /tmp/ --use-subnets --region us-west-1
+python graph_region.py --profile name_goes_here --directory /tmp/ --use-subnets --region us-west-1
+profile python graph_region.py --profile anthore_profile --directory /tmp/ --use-subnets --region us-west-1
 ```
 
 Conversely, for users who do not have an `~/.aws/credentials` file the options

@@ -462,9 +462,7 @@ parser.add_argument("-s", "--use-security-group-subgraphs",
 parser.add_argument("-x", "--exclude-security-group",
                   action="append", dest="exclude_security_groups", metavar="SECURITY-GROUP",
                   help="exclude security group")
-parser.add_argument("-p", "--profile",
-                  dest="profile", default="default",
-                  help="select the AWS profile to use")
+parser.add_argument("-p", "--profile", dest="profile", help="select the AWS profile to use")
 parser.add_argument("-r", "--region",
                   dest="region", default="eu-west-1",
                   help="select region to graph")
@@ -477,7 +475,8 @@ visualizer.directory = options.directory
 if options.exclude_security_groups:
 	visualizer.exclude_security_groups = options.exclude_security_groups
 visualizer.region = options.region
-visualizer.profile = options.profile
+if options.profile:
+	visualizer.profile = options.profile
 
 visualizer.connect()
 visualizer.print_security_group_tables()
