@@ -96,8 +96,8 @@ class EC2Instance(dict):
     def __eq__(self, other):
         return self.__key() == other.__key()
 
-    def __str__(self):
-        return self.__key()
+    # def __str__(self):
+        # return self.__key()
 
 
 class SecurityGroup(dict):
@@ -165,6 +165,7 @@ class AWSVisualizer:
         session = boto3.Session(**kwargs)
         self.EC2 = session.client('ec2')
         self.ELB = session.client('elb')
+        self.region = session.region_name
         self.load()
 
     def load(self):
@@ -202,8 +203,9 @@ class AWSVisualizer:
             self.ips[vpc['VpcId']] = set()
         for vpc in self.vpcs:
             for instance in self.get_instances_in_vpc(vpc['VpcId']):
-                if 'PublicIp' in instance:
-                    self.ips[vpc['VpcId']].update([instance['PublicIp']])
+                if 'PublicIpAddress' in instance:
+                    self.ips[vpc['VpcId']].update(
+                        [instance['PublicIpAddress']])
                 if 'PrivateIpAddress' in instance:
                     self.ips[vpc['VpcId']].update(
                         [instance['PrivateIpAddress']])
@@ -397,7 +399,16 @@ class AWSVisualizer:
                 else:
                     file.write('<td>%s</td>' % '&nbsp;')
             file.write('</tr>\n')
-        file.write('</table></body></html>')
+        file.write('</table><ul>')
+        for instance in self.instances_in_current_vpc:
+            ip = ' %s' % (instance['PublicIpAddress']
+                          if 'PublicIpAddress' in instance else "")
+            file.write('<li><a href="https://%s.console.aws.amazon.com/ec2/v2/home?region=%s#Instances:search=%s">%s%s</a> - %s</li>\n' %
+                       (self.region, self.region, instance['InstanceId'], self.get_name(instance), ip, 'instance'))
+        for lb in self.get_loadbalancers_in_vpc(str(vpc)):
+            file.write('<li><a href="https://%s.console.aws.amazon.com/ec2/v2/home?region=%s#LoadBalancers:search=%s">%s</a> - %s</li>\n' %
+                       (self.region, self.region, lb['LoadBalancerName'], self.get_name(lb), 'Elastic Load Balancer'))
+        file.write('</ul></body></html>')
 
     def print_security_group_partition_dot(self, vpc, file):
         partition = defaultdict()
@@ -432,7 +443,8 @@ class AWSVisualizer:
                     file.write('label = "%s";\n' % name)
                 for instance in subnet_instances:
                     name = self.get_name(instance)
-                    ip = instance['PublicIp'] if 'PublicIp' in instance else ""
+                    ip = instance[
+                        'PublicIpAddress'] if 'PublicIpAddress' in instance else ""
                     file.write('"%s" [label="%s\\n%s"];\n' %
                                (instance, name, ip))
                 if self.use_subnets:
