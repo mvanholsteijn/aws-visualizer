@@ -133,7 +133,7 @@ class AWSVisualizer:
 		self.vpcs = None
 		self.instances = None
 		self.security_groups = None
-		self.region = 'eu-west-1'
+		self.region = None
 		self.profile = None
 		self.EC2 = None
 		self.ELB = None
@@ -145,8 +145,14 @@ class AWSVisualizer:
 
 	def connect(self):
 
-		self.EC2 = boto3.client('ec2')
-		self.ELB = boto3.client('elb')
+		kwargs = {}
+		if self.profile:
+			kwargs['profile_name'] = self.profile 
+		if self.region:
+			kwargs['region_name'] = self.region
+		session = boto3.Session(**kwargs)
+		self.EC2 = session.client('ec2')
+		self.ELB = session.client('elb')
 		self.load()
 
 	def load(self):
