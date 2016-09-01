@@ -32,7 +32,7 @@ INSTALL
 -------
 - install python
 - install graphviz
-- pip install boto netaddr
+- pip install boto3 netaddr
 
 Quickstart
 -----------
