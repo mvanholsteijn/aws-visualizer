@@ -154,6 +154,7 @@ class AWSVisualizer:
         self.loadbalancers = None
         self.ips = {}
         self.exclude_security_groups = set()
+        self.ArnToAssume = None
 
     def connect(self):
 
@@ -163,6 +164,13 @@ class AWSVisualizer:
         if self.region:
             kwargs['region_name'] = self.region
         session = boto3.Session(**kwargs)
+        if self.ArnToAssume:
+            sts = session.client('sts')
+            assumedSession = sts.assume_role(RoleArn=self.ArnToAssume,RoleSessionName='aws-visualizer-session')
+            kwargs['aws_access_key_id'] = assumedSession['Credentials']['AccessKeyId']
+            kwargs['aws_secret_access_key'] = assumedSession['Credentials']['SecretAccessKey']
+            kwargs['aws_session_token'] = assumedSession['Credentials']['SessionToken']
+            session = boto3.Session(**kwargs)
         self.EC2 = session.client('ec2')
         self.ELB = session.client('elb')
         self.region = session.region_name
@@ -515,6 +523,9 @@ parser.add_argument("-p", "--profile", dest="profile",
 parser.add_argument("-r", "--region",
                     dest="region", default="eu-west-1",
                     help="select region to graph")
+parser.add_argument("-a", "--assume",
+                    dest="ArnToAssume", default="",
+                    help="ARN to assumeRole into")
 
 options = parser.parse_args()
 visualizer = AWSVisualizer()
@@ -526,6 +537,7 @@ if options.exclude_security_groups:
 visualizer.region = options.region
 if options.profile:
     visualizer.profile = options.profile
-
+if options.ArnToAssume:
+    visualizer.ArnToAssume = options.ArnToAssume
 visualizer.connect()
 visualizer.print_security_group_tables()
