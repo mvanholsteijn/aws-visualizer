@@ -179,7 +179,8 @@ class AWSVisualizer:
         self.reservations = self.EC2.describe_instances()['Reservations']
         for r in self.reservations:
             for i in r['Instances']:
-                self.instances.append(EC2Instance(i))
+                if i['State']['Name'] != "terminated":
+                    self.instances.append(EC2Instance(i))
 
         self.load_all_ips()
         self.load_subnets()
