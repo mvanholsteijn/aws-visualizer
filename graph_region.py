@@ -135,6 +135,12 @@ class LoadBalancer(dict):
     def __str__(self):
         return self.__key()
 
+    def get_vpc_id(self):
+	return self['VpcId'] if 'VpcId' in self else self['VPCId']
+
+    def get_subnets(self):
+	return self['Subnets'] if 'Subnets' in self else map(lambda a: a['SubnetId'], self['AvailabilityZones'])
+
 
 class AWSVisualizer:
 
@@ -173,6 +179,7 @@ class AWSVisualizer:
             session = boto3.Session(**kwargs)
         self.EC2 = session.client('ec2')
         self.ELB = session.client('elb')
+        self.ELBv2 = session.client('elbv2')
         self.region = session.region_name
         self.load()
 
@@ -180,6 +187,8 @@ class AWSVisualizer:
         self.vpcs = map(lambda v: Vpc(v), self.EC2.describe_vpcs()['Vpcs'])
         self.loadbalancers = map(lambda lb: LoadBalancer(
             lb), self.ELB.describe_load_balancers()['LoadBalancerDescriptions'])
+        self.loadbalancers.extend(map(lambda lb: LoadBalancer(
+            lb), self.ELBv2.describe_load_balancers()['LoadBalancers']))
         self.security_groups = map(lambda g: SecurityGroup(
             g), self.EC2.describe_security_groups()['SecurityGroups'])
 
@@ -236,6 +245,7 @@ class AWSVisualizer:
     def load_assigned_lb_security_groups(self):
         self.assigned_lb_security_groups = {}
         for lb in self.loadbalancers:
+            print lb
             self.assigned_lb_security_groups[lb] = map(
                 lambda g: self.get_security_group_by_id(g), lb['SecurityGroups'])
 
@@ -497,13 +507,13 @@ class AWSVisualizer:
         return filter(lambda instance: instance['VpcId'] == vpc_id, self.instances)
 
     def get_loadbalancers_in_vpc(self, vpc_id):
-        return filter(lambda lb: lb['VPCId'] == vpc_id, self.loadbalancers)
+        return filter(lambda lb: (lb.get_vpc_id() == vpc_id), self.loadbalancers)
 
     def get_instances_in_subnet(self, subnet_id):
         return filter(lambda instance: instance['SubnetId'] == subnet_id, self.instances)
 
     def get_loadbalancers_in_subnet(self, subnet_id):
-        return filter(lambda lb: subnet_id in lb['Subnets'], self.loadbalancers)
+        return filter(lambda lb: subnet_id in lb.get_subnets(), self.loadbalancers)
 
 
 parser = argparse.ArgumentParser(description='Process some integers.')
