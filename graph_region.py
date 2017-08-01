@@ -245,7 +245,6 @@ class AWSVisualizer:
     def load_assigned_lb_security_groups(self):
         self.assigned_lb_security_groups = {}
         for lb in self.loadbalancers:
-            print lb
             self.assigned_lb_security_groups[lb] = map(
                 lambda g: self.get_security_group_by_id(g), lb['SecurityGroups'])
 
