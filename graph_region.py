@@ -530,7 +530,7 @@ parser.add_argument("-x", "--exclude-security-group",
 parser.add_argument("-p", "--profile", dest="profile",
                     help="select the AWS profile to use")
 parser.add_argument("-r", "--region",
-                    dest="region", default="eu-west-1",
+                    dest="region", default="eu-central-1",
                     help="select region to graph")
 parser.add_argument("-a", "--assume",
                     dest="ArnToAssume", default="",
