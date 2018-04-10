@@ -517,13 +517,13 @@ class AWSVisualizer:
             file.close()
 
     def get_instances_in_vpc(self, vpc_id):
-        return filter(lambda instance: instance['VpcId'] == vpc_id, self.instances)
+        return filter(lambda instance: 'VpcId' in instance and instance['VpcId'] == vpc_id, self.instances)
 
     def get_loadbalancers_in_vpc(self, vpc_id):
         return filter(lambda lb: (lb.get_vpc_id() == vpc_id), self.loadbalancers)
 
     def get_instances_in_subnet(self, subnet_id):
-        return filter(lambda instance: instance['SubnetId'] == subnet_id, self.instances)
+        return filter(lambda instance: 'SubnetId' in instance and instance['SubnetId'] == subnet_id, self.instances)
 
     def get_loadbalancers_in_subnet(self, subnet_id):
         return filter(lambda lb: subnet_id in lb.get_subnets(), self.loadbalancers)
