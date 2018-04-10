@@ -67,10 +67,11 @@ INSTALL
 - install graphviz
 - pip install boto3 netaddr
 
-
+Example
+-------
 ```
 python graph_region.py --profile name_goes_here --directory /tmp/ --use-subnets --region us-west-1
-profile python graph_region.py --profile anothor_profile --directory /tmp/ --use-subnets --region us-west-1
+profile python graph_region.py --profile another_profile --directory /tmp/ --use-subnets --region us-west-1
 ```
 
 Quickstart
