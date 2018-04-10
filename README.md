@@ -3,6 +3,10 @@ aws-visualizer
 Visualizing the potential network dependencies within a VPC based on the security groups.
 
 It can generate the following:
+- An HTML table with all security group dependencies between network components.
+- A graph of all security group dependencies between network components.
+- A graph of all security group dependencies between network components grouped by security groups.
+- A graph of all security group dependencies between network components grouped by subnet.
 
 
 html table
