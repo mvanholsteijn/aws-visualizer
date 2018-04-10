@@ -31,22 +31,29 @@ function check_pip_installed() {
 
 check_pip_installed boto3 netaddr
 
-rm -rf target
-mkdir -p target/default
-mkdir -p target/securitygroups
-mkdir -p target/subnets
+read -e -p 'AWS Profile [default]:' profilename
+profilename=${profilename:-default}
+read -e -p 'AWS Region [eu-central-1]:' profileregion
+profileregion=${profileregion:-eu-central-1}
+
+rm -rf target/$profilename
+mkdir -p target/$profilename/default
+mkdir -p target/$profilename/securitygroups
+mkdir -p target/$profilename/subnets
 
 echo INFO: graphing default dependencies
-python graph_region.py  --directory target/default $@
+python graph_region.py -p $profilename --directory target/$profilename -r $profileregion $@
 echo INFO: graphing with subnets
-python graph_region.py  --directory target/subnets --use-subnets $@
+python graph_region.py -p $profilename --directory target/$profilename/subnets -r $profileregion --use-subnets $@
 echo INFO: graphing with security groups 
-python graph_region.py  --directory target/securitygroups --use-security-group-subgraphs $@
+python graph_region.py -p $profilename --directory target/$profilename/securitygroups -r $profileregion --use-security-group-subgraphs $@
 
 
 DOT=$(which dot)
+DOTFILE=$(find target/$profilename -type f -name '*.dot')
+
 if [ -n "$DOT" ] ; then
-	for file in target/*/*.dot; do
+	for file in $DOTFILE; do
 		echo INFO: generating png for $file
 		dot -Tpng -o $(dirname $file)/$(basename $file .dot).png  $file
 	done
