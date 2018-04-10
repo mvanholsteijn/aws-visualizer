@@ -67,7 +67,7 @@ One can differentiate between different profiles by running commands like:
 
 ```
 python graph_region.py --profile name_goes_here --directory /tmp/ --use-subnets --region us-west-1
-profile python graph_region.py --profile anthore_profile --directory /tmp/ --use-subnets --region us-west-1
+profile python graph_region.py --profile anothor_profile --directory /tmp/ --use-subnets --region us-west-1
 ```
 
 Conversely, for users who do not have an `~/.aws/credentials` file the options

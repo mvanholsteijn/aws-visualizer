@@ -31,14 +31,6 @@ function check_pip_installed() {
 
 check_pip_installed boto3 netaddr
 
-if [ ! -f ~/.aws/credentials ] ; then
-	echo ERROR: ~/.aws/credentials are missing. 
-	echo '	[default]'
-	echo '	aws_access_key_id = <ACCESS_KEY>'
-	echo '	aws_secret_access_key = <SECRET_KEY>'
-	exit 1
-fi
-
 rm -rf target
 mkdir -p target/default
 mkdir -p target/securitygroups
