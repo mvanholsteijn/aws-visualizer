@@ -1,10 +1,38 @@
 aws-visualizer
 ==============
-Visualizing an AWS region.
+Visualizing the potential network dependencies within a VPC based on the security groups.
 
-Generates a DOT file, for each VPC in the region.
-Generates a security group HTML table showing all grants, for each VPC in the region.
+It can generate the following:
+- An HTML table with all security group dependencies between network components.
+- A graph of all security group dependencies between network components.
+- A graph of all security group dependencies between network components grouped by security groups.
+- A graph of all security group dependencies between network components grouped by subnet.
 
+
+html table
+----------
+An HTML table with all security group dependencies between network components.
+![A HTML table with all security groups](sample/default/vpc-security-groups-html.jpg).
+
+overall graph
+--------------
+A graph of all security group dependencies between network components.
+![A graph of all security group dependencies](sample/default/vpc-security-groups.png) 
+
+Grouped by security group
+--------------------------
+A graph of all security group dependencies between network components grouped by security groups.
+![A graph of all dependencies grouped by security group](sample/securitygroups/vpc-security-groups.png) 
+
+Grouped by subnets
+------------------
+A graph of all security group dependencies between network components grouped by subnet.
+![A graph of all dependencies grouped by subnet](sample/subnets/vpc-security-groups.png) 
+
+
+
+usage
+=====
 graph\_region.py [--directory output-directory ] 
 	[ --use-subnets | --use-security-group-subgraphs ] 
 	[--profile aws-profile] 
@@ -39,44 +67,14 @@ INSTALL
 - install graphviz
 - pip install boto3 netaddr
 
-
-Authenticating
---------------
-AWS Visualizer uses the `boto3` library to make it's calls to the AWS API.  As
-such it supports all of the tratitional boto mechanisms for [specifying
-credentials](http://boto3.readthedocs.io/en/latest/guide/configuration.html#guide-configuration)
-
-Given the following `~/.aws/credentials` file:
-
-```
-[default]
-aws_access_key_id = <your default access key>
-aws_secret_access_key = <your default secret key>
-
-[name_goes_here]
-aws_access_key_id = <access key for this profile>
-aws_secret_access_key = <secret key for this profile>
-
-[another_profile]
-aws_access_key_id = <access key for this profile>
-aws_secret_access_key = <secret key for this profile>
-aws_security_token = <optional security token for this profile>
-```
-
-One can differentiate between different profiles by running commands like:
-
+Example
+-------
 ```
 python graph_region.py --profile name_goes_here --directory /tmp/ --use-subnets --region us-west-1
 profile python graph_region.py --profile another_profile --directory /tmp/ --use-subnets --region us-west-1
 ```
 
-Conversely, for users who do not have an `~/.aws/credentials` file the options
-can be provided as environment variables:
-
-```
-AWS_ACCESS_KEY_ID=OXOXOXOXXOXOXO AWS_SECRET_ACCESS_KEY=QWQWQQWQWQWQWQW python graph_region.py --directory /tmp/ --use-subnets --region us-west-1
-```
-
 Quickstart
 -----------
 ./run.sh will generate three different views for each subnet in target: default, securitygroups and subnet.
+

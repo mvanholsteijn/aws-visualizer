@@ -1,3 +1,17 @@
+#!/usr/bin/env python
+#   Copyright 2015 Xebia Nederland B.V.
+#
+#   Licensed under the Apache License, Version 2.0 (the "License");
+#   you may not use this file except in compliance with the License.
+#   You may obtain a copy of the License at
+#
+#       http://www.apache.org/licenses/LICENSE-2.0
+#
+#   Unless required by applicable law or agreed to in writing, software
+#   distributed under the License is distributed on an "AS IS" BASIS,
+#   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+#   See the License for the specific language governing permissions and
+#   limitations under the License.
 import argparse
 
 
@@ -503,13 +517,13 @@ class AWSVisualizer:
             file.close()
 
     def get_instances_in_vpc(self, vpc_id):
-        return filter(lambda instance: instance['VpcId'] == vpc_id, self.instances)
+        return filter(lambda instance: 'VpcId' in instance and instance['VpcId'] == vpc_id, self.instances)
 
     def get_loadbalancers_in_vpc(self, vpc_id):
         return filter(lambda lb: (lb.get_vpc_id() == vpc_id), self.loadbalancers)
 
     def get_instances_in_subnet(self, subnet_id):
-        return filter(lambda instance: instance['SubnetId'] == subnet_id, self.instances)
+        return filter(lambda instance: 'SubnetId' in instance and instance['SubnetId'] == subnet_id, self.instances)
 
     def get_loadbalancers_in_subnet(self, subnet_id):
         return filter(lambda lb: subnet_id in lb.get_subnets(), self.loadbalancers)
