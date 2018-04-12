@@ -570,6 +570,5 @@ def main():
     visualizer.connect()
     visualizer.print_security_group_tables()
 
-
 if __name__ == '__main__':
     main()
