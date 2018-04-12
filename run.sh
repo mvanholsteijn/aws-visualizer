@@ -24,7 +24,7 @@ mkdir -p target/$profilename/securitygroups
 mkdir -p target/$profilename/subnets
 
 echo INFO: graphing default dependencies
-aws-visualizer -p $profilename --directory target/$profilename -r $profileregion $@
+aws-visualizer -p $profilename --directory target/$profilename/default -r $profileregion $@
 echo INFO: graphing with subnets
 aws-visualizer -p $profilename --directory target/$profilename/subnets -r $profileregion --use-subnets $@
 echo INFO: graphing with security groups 
@@ -40,7 +40,7 @@ if [ -n "$DOT" ] ; then
 		dot -Tpng -o $(dirname $file)/$(basename $file .dot).png  $file
 	done
 	if [ "$(uname)" == "Darwin" ] ; then
-		open target/*/*.png
+		open $(sed -e 's/\.dot/\.png/g' <<< $DOTFILE)
 	else
 		echo INFO: Done. checkout target/ subdirectories
 	fi
