@@ -1,6 +1,6 @@
 aws-visualizer
 ==============
-Visualizing the potential network dependencies within a VPC based on the security groups.
+A visualizer of the network of security group dependencies in an AWS VPC.
 
 It can generate the following:
 - An HTML table with all security group dependencies between network components.
@@ -30,48 +30,48 @@ A graph of all security group dependencies between network components grouped by
 ![A graph of all dependencies grouped by subnet](sample/subnets/vpc-security-groups.png) 
 
 
-
 usage
 =====
-graph\_region.py [--directory output-directory ] 
-	[ --use-subnets | --use-security-group-subgraphs ] 
-	[--profile aws-profile] 
-	[--region aws-region] 
-	[--exclude-security-group security-group]
-	[--no-dot-output]
-
---profile aws-profile
-	to use to connect 
-
---region aws-region
-	to graph vpc's of
-
---use-subnets
-	uses subgraphs for use subnet in the vpc.
-	default is false.
-
-----use-security-group-subgraphs
-	uses security group grouping as subgraphs.
-	default is false.
-
---exclude-security-group
-	comma separated list of security groups to exclude from graph. 
-
---no-dot-output
-	do not generate dot output files. Will only generate a HTML table
+```
+aws-visualizer [-h] [--directory DIRECTORY] [--use-subnets]
+                       [--use-security-group-subgraphs]
+                       [--exclude-security-group SECURITY-GROUP]
+                       [--profile PROFILE] [--region REGION]
+                       [--assume-role ROLE]
+```
 
 
-INSTALL
+optional arguments:
+```
+  -h, --help            show this help message and exit
+  --directory DIRECTORY, -d DIRECTORY
+                        output directory defaults to .
+  --use-subnets, -n     use subnet subgraphs
+  --use-security-group-subgraphs, -s
+                        use security group subgraphs
+  --exclude-security-group SECURITY-GROUP, -x SECURITY-GROUP
+                        exclude security group
+  --profile PROFILE, -p PROFILE
+                        select the AWS profile to use
+  --region REGION, -r REGION
+                        select region to graph
+  --assume-role ROLE, -a ROLE
+                        ARN of the role to assume
+```
+
+
+Install
 -------
-- install python
-- install graphviz
-- pip install boto3 netaddr
+- brew install graphviz
+- pip install aws-visualizer
 
 Example
 -------
+
 ```
-python graph_region.py --profile name_goes_here --directory /tmp/ --use-subnets --region us-west-1
-profile python graph_region.py --profile another_profile --directory /tmp/ --use-subnets --region us-west-1
+$ aws-visualizer --directory .
+$ for F in *.dot; do dot -Tpng -o $(basename $F .dot).png $F; done
+$ open *.html *.png
 ```
 
 Quickstart

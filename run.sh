@@ -13,40 +13,29 @@
 #   See the License for the specific language governing permissions and
 #   limitations under the License.
 
-function check_pip_installed() {
-	PIP=$(which pip)
-	if [ -z "$PIP" ] ; then
-		echo ERROR: Python not installed
-		exit 1
-	fi
-	for module in $@ ; do
-		INSTALLED=$(pip show $module 2>/dev/null)
-		if [ -z "$INSTALLED" ] ; then
-			echo ERROR: module $module not installed. 	
-			echo ERROR: please run pip install $@
-			exit 1
-		fi
-	done
-}
+read -e -p 'AWS Profile [default]:' profilename
+profilename=${profilename:-default}
+read -e -p 'AWS Region [eu-central-1]:' profileregion
+profileregion=${profileregion:-eu-central-1}
 
-check_pip_installed boto3 netaddr
-
-rm -rf target
-mkdir -p target/default
-mkdir -p target/securitygroups
-mkdir -p target/subnets
+rm -rf target/$profilename
+mkdir -p target/$profilename/default
+mkdir -p target/$profilename/securitygroups
+mkdir -p target/$profilename/subnets
 
 echo INFO: graphing default dependencies
-python graph_region.py  --directory target/default $@
+aws-visualizer -p $profilename --directory target/$profilename -r $profileregion $@
 echo INFO: graphing with subnets
-python graph_region.py  --directory target/subnets --use-subnets $@
+aws-visualizer -p $profilename --directory target/$profilename/subnets -r $profileregion --use-subnets $@
 echo INFO: graphing with security groups 
-python graph_region.py  --directory target/securitygroups --use-security-group-subgraphs $@
+aws-visualizer -p $profilename --directory target/$profilename/securitygroups -r $profileregion --use-security-group-subgraphs $@
 
 
 DOT=$(which dot)
+DOTFILE=$(find target/$profilename -type f -name '*.dot')
+
 if [ -n "$DOT" ] ; then
-	for file in target/*/*.dot; do
+	for file in $DOTFILE; do
 		echo INFO: generating png for $file
 		dot -Tpng -o $(dirname $file)/$(basename $file .dot).png  $file
 	done
