@@ -18,7 +18,7 @@ setup(
     name = "aws-visualizer",
     packages = ["aws_visualizer"],
     entry_points = {
-        "console_scripts": ['aws-visualizer = aws_visualizer:main']
+        "console_scripts": ['aws-visualizer = aws_visualizer.dot:main', 'aws-neo4j = aws_visualizer.neo4j:main' ]
         },
     version = version,
     description = "A visualizer of the network of security group dependencies in an AWS VPC.",
@@ -26,7 +26,7 @@ setup(
     include_package_data=True,
     zip_safe=False,
     platforms='any',
-    install_requires=['boto3', 'netaddr'],
+    install_requires=['boto3', 'netaddr', 'neomodel'],
     author = "Mark van Holsteijn",
     author_email = "mark@binx.io",
     url = "https://github.com/mvanholsteijn/aws-visualizer",
