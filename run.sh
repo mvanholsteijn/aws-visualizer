@@ -24,12 +24,11 @@ mkdir -p target/$profilename/securitygroups
 mkdir -p target/$profilename/subnets
 
 echo INFO: graphing default dependencies
-aws-visualizer -p $profilename --directory target/$profilename/default -r $profileregion $@
+aws-dot -p $profilename --directory target/$profilename/default -r $profileregion $@
 echo INFO: graphing with subnets
-aws-visualizer -p $profilename --directory target/$profilename/subnets -r $profileregion --use-subnets $@
+aws-dot -p $profilename --directory target/$profilename/subnets -r $profileregion --use-subnets $@
 echo INFO: graphing with security groups 
-aws-visualizer -p $profilename --directory target/$profilename/securitygroups -r $profileregion --use-security-group-subgraphs $@
-
+aws-dot -p $profilename --directory target/$profilename/securitygroups -r $profileregion --use-security-group-subgraphs $@
 
 DOT=$(which dot)
 DOTFILE=$(find target/$profilename -type f -name '*.dot')

@@ -1,4 +1,4 @@
-aws-visualizer
+aws-dot
 ==============
 A visualizer of the network of security group dependencies in an AWS VPC.
 
@@ -33,7 +33,7 @@ A graph of all security group dependencies between network components grouped by
 usage
 =====
 ```
-aws-visualizer [-h] [--directory DIRECTORY] [--use-subnets]
+aws-dot [-h] [--directory DIRECTORY] [--use-subnets]
                        [--use-security-group-subgraphs]
                        [--exclude-security-group SECURITY-GROUP]
                        [--profile PROFILE] [--region REGION]
@@ -63,13 +63,13 @@ optional arguments:
 Install
 -------
 - brew install graphviz
-- pip install aws-visualizer
+- pip install aws-dot
 
 Example
 -------
 
 ```
-$ aws-visualizer --directory .
+$ aws-dot --directory .
 $ for F in *.dot; do dot -Tpng -o $(basename $F .dot).png $F; done
 $ open *.html *.png
 ```

@@ -16,9 +16,9 @@ version="0.0.0"
 
 setup(
     name = "aws-visualizer",
-    packages = ["aws_visualizer"],
+    packages = ["aws_visualizer", "aws_visualizer.neo4j", "aws_visualizer.dot" ],
     entry_points = {
-        "console_scripts": ['aws-visualizer = aws_visualizer.dot:main', 'aws-neo4j = aws_visualizer.neo4j:main' ]
+        "console_scripts": ['aws-neo4j = aws_visualizer.neo4j:main', 'aws-dot = aws_visualizer.dot:main' ]
         },
     version = version,
     description = "A visualizer of the network of security group dependencies in an AWS VPC.",

@@ -1,1 +1,1 @@
-from aws_visualizer.neo4j.main import main
+from .main import main
