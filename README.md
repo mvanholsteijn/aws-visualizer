@@ -63,7 +63,7 @@ optional arguments:
 Install
 -------
 - brew install graphviz
-- pip install aws-dot
+- pip install aws-visualizer
 
 Example
 -------
